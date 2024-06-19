@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include <cfloat>
+#include <string>
 #include "radius.h"
 
 MaterialProperties::MaterialProperties ( const std::string& a_name )
@@ -83,6 +84,9 @@ int main()
     Real e_sat;
     Real solute_mass; // kg
 
+    std::string ti_choice = "noname";
+    Real cfl = 1.0;
+
     FILE* in;
     in = fopen("input", "r");
     if (!in) {
@@ -95,22 +99,20 @@ int main()
     fscanf(in, "%lf", &temperature);
     fscanf(in, "%lf", &e_sat);
     fscanf(in, "%lf", &solute_mass);
+    char temp[100];
+    fscanf(in, "%s" , temp );
+    ti_choice = std::string(temp);
+    fscanf(in, "%lf", &cfl);
 
     printf("Solute mass: %1.4e kg\n", solute_mass);
     printf("Temperature: %1.4e K\n", temperature);
     printf("Saturation pressure: %1.4e Pa\n", e_sat);
     printf("Saturation ratio: %1.4e\n", sat_ratio);
+    printf("Time integration: %s\n", ti_choice.c_str());
+    printf("CFL: %1.1e\n", cfl);
 
     Real radius = radius_init;
     printf("Initial radius: %1.16e\n", radius);
-
-    Real init_timescale = drsqdt_rhsjac(  radius*radius,
-                                          temperature,
-                                          e_sat,
-                                          solute_mass );
-    printf("Initial timescale: %1.4e\n", 1.0 / std::sqrt(init_timescale*init_timescale));
-
-    Real cfl = 0.0009;
 
     SuperDropletsUtils::TIRK4< SuperDropletsUtils::dRsqdt_RHSFunc,
                                SuperDropletsUtils::dRsqdt_RHSJac,
@@ -146,10 +148,18 @@ int main()
                                                               cfl };
 
     Real r_sq = radius_init * radius_init;
-    //ti_rk4(r_sq);
-    //ti_be(r_sq);
-    //ti_cn(r_sq);
-    ti_dirk2(r_sq);
+    if (ti_choice == "rk4") {
+        ti_rk4(r_sq);
+    } else if (ti_choice == "backward_euler") {
+        ti_be(r_sq);
+    } else if (ti_choice == "cn") {
+        ti_cn(r_sq);
+    } else if (ti_choice == "dirk2") {
+        ti_dirk2(r_sq);
+    } else {
+        printf("ERROR: invalid time integrator choice!\n");
+        return 1;
+    }
     radius = std::sqrt(r_sq);
     printf("Final radius: %1.16e m\n", radius);
 

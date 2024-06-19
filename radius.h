@@ -278,23 +278,37 @@ namespace SuperDropletsUtils
                     dt = m_t_final - cur_time;
                 }
 
-                RT u1 = a_u;
-                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+                RT u_new = 0.0;
+                while (1) {
 
-                RT u2 = a_u + 0.5*dt*f1;
-                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+                  RT u1 = a_u;
+                  RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
 
-                RT u3 = a_u + 0.5*dt*f2;
-                RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
+                  RT u2 = a_u + 0.5*dt*f1;
+                  RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
 
-                RT u4 = a_u + 1.0*dt*f3;
-                RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
+                  RT u3 = a_u + 0.5*dt*f2;
+                  RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
 
-                a_u += dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
+                  RT u4 = a_u + 1.0*dt*f3;
+                  RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
 
+                  u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
+
+                  if (std::isfinite(u_new)) {
+                    break;
+                  }
+                  dt *= 0.5;
+                  if (dt < (1.0e-12*m_t_final)) {
+                    break;
+                  }
+                }
+
+                a_u = u_new;
                 cur_time += dt;
 
-                printf("Time %1.2e, dt = %1.2e, radius = %1.4e\n", cur_time, dt, std::sqrt(a_u));
+                printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
+                        cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u));
             }
         }
 
