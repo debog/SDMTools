@@ -108,48 +108,24 @@ int main()
     Real radius = radius_init;
     printf("Initial radius: %1.16e\n", radius);
 
-    SuperDropletsUtils::TIRK4< SuperDropletsUtils::dRsqdt_RHSFunc,
-                               SuperDropletsUtils::dRsqdt_RHSJac,
-                               ParticleReal > ti_rk4 { drsqdt_rhsfun, drsqdt_rhsjac,
-                                                       tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                       cfl };
-
-    SuperDropletsUtils::TIBE < SuperDropletsUtils::dRsqdt_RHSFunc,
-                               SuperDropletsUtils::dRsqdt_RHSJac,
-                               SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
-                                                                SuperDropletsUtils::dRsqdt_RHSJac,
-                                                                ParticleReal>,
-                               ParticleReal > ti_be { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
-                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                      cfl };
-
-    SuperDropletsUtils::TICN < SuperDropletsUtils::dRsqdt_RHSFunc,
-                               SuperDropletsUtils::dRsqdt_RHSJac,
-                               SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
-                                                                SuperDropletsUtils::dRsqdt_RHSJac,
-                                                                ParticleReal>,
-                               ParticleReal > ti_cn { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
-                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                      cfl };
-
-    SuperDropletsUtils::TIDIRK212 < SuperDropletsUtils::dRsqdt_RHSFunc,
-                                    SuperDropletsUtils::dRsqdt_RHSJac,
-                                    SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
-                                                                     SuperDropletsUtils::dRsqdt_RHSJac,
-                                                                     ParticleReal>,
-                                    ParticleReal > ti_dirk2 { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
-                                                              tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                              cfl };
+    SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt_RHSFunc,
+                             SuperDropletsUtils::dRsqdt_RHSJac,
+                             SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
+                                                              SuperDropletsUtils::dRsqdt_RHSJac,
+                                                              ParticleReal>,
+                             ParticleReal > ti { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                                 tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                 cfl };
 
     Real r_sq = radius_init * radius_init;
     if (ti_choice == "rk4") {
-        ti_rk4(r_sq);
+        ti.rk4(r_sq);
     } else if (ti_choice == "backward_euler") {
-        ti_be(r_sq);
+        ti.be(r_sq);
     } else if (ti_choice == "cn") {
-        ti_cn(r_sq);
+        ti.cn(r_sq);
     } else if (ti_choice == "dirk2") {
-        ti_dirk2(r_sq);
+        ti.dirk212(r_sq);
     } else {
         printf("ERROR: invalid time integrator choice!\n");
         return 1;

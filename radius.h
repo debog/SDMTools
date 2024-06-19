@@ -203,11 +203,12 @@ namespace SuperDropletsUtils
         }
     };
 
-    template<typename RHSFunc, typename JacFunc, typename RT>
-    struct TIRK4
+    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
+    struct TI
     {
         RHSFunc& m_rhs;
         JacFunc& m_jac;
+        NewtonSolver& m_newton;
 
         RT m_t_final;
         RT m_S;
@@ -217,7 +218,7 @@ namespace SuperDropletsUtils
 
         RT m_cfl;
 
-        void operator() ( RT& a_u ) const
+        void rk4 ( RT& a_u ) const
         {
             RT cur_time = 0.0;
 
@@ -266,24 +267,7 @@ namespace SuperDropletsUtils
             }
         }
 
-    };
-
-    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
-    struct TIBE
-    {
-        RHSFunc& m_rhs;
-        JacFunc& m_jac;
-        NewtonSolver& m_newton;
-
-        RT m_t_final;
-        RT m_S;
-        RT m_T;
-        RT m_e_s;
-        RT m_M_s;
-
-        RT m_cfl;
-
-        void operator() ( RT& a_u ) const
+        void be ( RT& a_u ) const
         {
             RT cur_time = 0.0;
 
@@ -333,24 +317,7 @@ namespace SuperDropletsUtils
             }
         }
 
-    };
-
-    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
-    struct TICN
-    {
-        RHSFunc& m_rhs;
-        JacFunc& m_jac;
-        NewtonSolver& m_newton;
-
-        RT m_t_final;
-        RT m_S;
-        RT m_T;
-        RT m_e_s;
-        RT m_M_s;
-
-        RT m_cfl;
-
-        void operator() ( RT& a_u ) const
+        void cn ( RT& a_u ) const
         {
             RT cur_time = 0.0;
 
@@ -407,24 +374,7 @@ namespace SuperDropletsUtils
             }
         }
 
-    };
-
-    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
-    struct TIDIRK212
-    {
-        RHSFunc& m_rhs;
-        JacFunc& m_jac;
-        NewtonSolver& m_newton;
-
-        RT m_t_final;
-        RT m_S;
-        RT m_T;
-        RT m_e_s;
-        RT m_M_s;
-
-        RT m_cfl;
-
-        void operator() ( RT& a_u ) const
+        void dirk212 ( RT& a_u ) const
         {
             RT cur_time = 0.0;
 
