@@ -76,14 +76,25 @@ int main()
                                       ParticleReal > newton_solver { drsqdt_rhsfun, drsqdt_rhsjac,
                                                                      1.0e-6,1.0e-99,1.0e-12,100 };
 
-    Real a_dt = 0.5; // s
-    Real tf = 0.5; // s
+    Real tf; // s
+    Real radius_init; // m
+    Real sat_ratio;
+    Real temperature; // K
+    Real e_sat;
+    Real solute_mass; // kg
 
-    Real radius_init = 1e-8; // m
-    Real sat_ratio = 1.01;
-    Real temperature = 300.0; // K
-    Real e_sat = 2.1493020629790435e+03;
-    Real solute_mass = 1e-19; // kg
+    FILE* in;
+    in = fopen("input", "r");
+    if (!in) {
+        printf("ERROR: no input file!\n");
+        return 1;
+    }
+    fscanf(in, "%lf", &tf);
+    fscanf(in, "%lf", &radius_init);
+    fscanf(in, "%lf", &sat_ratio);
+    fscanf(in, "%lf", &temperature);
+    fscanf(in, "%lf", &e_sat);
+    fscanf(in, "%lf", &solute_mass);
 
     printf("Solute mass: %1.4e kg\n", solute_mass);
     printf("Temperature: %1.4e K\n", temperature);
