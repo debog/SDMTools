@@ -217,7 +217,13 @@ namespace SuperDropletsUtils
                                   + m_rhs( a_u, a_S, a_T, a_e_s, a_M_s ) );
                 a_res_norm_a = std::sqrt(residual*residual);
 
-                if (k == 0) { res_norm0 = a_res_norm_a; }
+                if (k == 0) {
+                    if (a_res_norm_a > 0) {
+                        res_norm0 = a_res_norm_a;
+                    } else {
+                        res_norm0 = 1.0;
+                    }
+                }
                 a_res_norm_r = a_res_norm_a / res_norm0;
 
 //                printf("  iter: %3d, norm: %1.4e (abs.), %1.4e (rel.)\n",
@@ -281,27 +287,30 @@ namespace SuperDropletsUtils
                 RT u_new = 0.0;
                 while (1) {
 
-                  RT u1 = a_u;
-                  RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+                    RT u1 = a_u;
+                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
 
-                  RT u2 = a_u + 0.5*dt*f1;
-                  RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+                    RT u2 = a_u + 0.5*dt*f1;
+                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
 
-                  RT u3 = a_u + 0.5*dt*f2;
-                  RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
+                    RT u3 = a_u + 0.5*dt*f2;
+                    RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
 
-                  RT u4 = a_u + 1.0*dt*f3;
-                  RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
+                    RT u4 = a_u + 1.0*dt*f3;
+                    RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
 
-                  u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
+                    u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
 
-                  if (std::isfinite(u_new)) {
-                    break;
-                  }
-                  dt *= 0.5;
-                  if (dt < (1.0e-12*m_t_final)) {
-                    break;
-                  }
+                    if (std::isfinite(std::sqrt(u_new))) {
+                        break;
+                    }
+                    dt *= 0.5;
+                    if (dt < (1.0e-12*m_t_final)) {
+                        break;
+                    }
+                    if (!std::isfinite(dt)) {
+                        break;
+                    }
                 }
 
                 a_u = u_new;
@@ -341,22 +350,39 @@ namespace SuperDropletsUtils
                     dt = m_t_final - cur_time;
                 }
 
-                RT mu = 1.0 / dt;
-                RT rhs = mu * a_u;
 
                 RT res_norm_a = DBL_MAX;
                 RT res_norm_r = DBL_MAX;
                 bool converged = false;
 
-                m_newton( a_u, rhs, mu,
-                          m_S, m_T, m_e_s, m_M_s,
-                          res_norm_a, res_norm_r, converged );
+                RT u_new = 0.0;
+                while (1) {
 
+                    RT mu = 1.0 / dt;
+                    RT rhs = mu * a_u;
+                    u_new = a_u;
+                    m_newton( u_new, rhs, mu,
+                              m_S, m_T, m_e_s, m_M_s,
+                              res_norm_a, res_norm_r, converged );
 
+                    if (std::isfinite(std::sqrt(a_u)) && converged) {
+                        break;
+                    }
+                    dt *= 0.5;
+                    if (dt < (1.0e-12*m_t_final)) {
+                        break;
+                    }
+                    if (!std::isfinite(dt)) {
+                        break;
+                    }
+                }
+
+                a_u = u_new;
                 cur_time += dt;
 
-                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e;\n  norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
-                        cur_time, dt, std::sqrt(a_u),
+                printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
+                        cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u) );
+                printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
                         res_norm_a, res_norm_r,
                         (converged ? "yes" : "no") );
             }
@@ -391,27 +417,46 @@ namespace SuperDropletsUtils
                     dt = m_t_final - cur_time;
                 }
 
-                RT mu = 1.0 / (0.5*dt);
-
-                RT u1 = a_u;
-                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
-
-                RT u2 = u1;
-                RT rhs = mu * (a_u + 0.5*dt*f1);
                 RT res_norm_a = DBL_MAX;
                 RT res_norm_r = DBL_MAX;
                 bool converged = false;
-                m_newton( u2, rhs, mu,
-                          m_S, m_T, m_e_s, m_M_s,
-                          res_norm_a, res_norm_r, converged );
-                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
 
-                a_u += 0.5 * dt * (f1 + f2);
+                RT u_new = 0.0;
 
+                while (1) {
+
+                    RT mu = 1.0 / (0.5*dt);
+
+                    RT u1 = a_u;
+                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+
+                    RT u2 = u1;
+                    RT rhs = mu * (a_u + 0.5*dt*f1);
+                    m_newton( u2, rhs, mu,
+                              m_S, m_T, m_e_s, m_M_s,
+                              res_norm_a, res_norm_r, converged );
+                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+
+                    u_new += 0.5 * dt * (f1 + f2);
+
+                    if (std::isfinite(std::sqrt(u_new)) && converged) {
+                        break;
+                    }
+                    dt *= 0.5;
+                    if (dt < (1.0e-12*m_t_final)) {
+                        break;
+                    }
+                    if (!std::isfinite(dt)) {
+                        break;
+                    }
+                }
+
+                a_u = u_new;
                 cur_time += dt;
 
-                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e;\n  norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
-                        cur_time, dt, std::sqrt(a_u),
+                printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
+                        cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u) );
+                printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
                         res_norm_a, res_norm_r,
                         (converged ? "yes" : "no") );
             }
@@ -446,42 +491,71 @@ namespace SuperDropletsUtils
                     dt = m_t_final - cur_time;
                 }
 
-                RT mu = 1.0 / dt;
+                bool converged = false;
+                RT res_norm_a = DBL_MAX;
+                RT res_norm_r = DBL_MAX;
+                RT u_new = 0.0;
 
-                RT u1 = a_u;
-                {
-                  RT rhs = mu * a_u;
-                  RT res_norm_a = DBL_MAX;
-                  RT res_norm_r = DBL_MAX;
-                  bool converged = false;
-                  m_newton( u1, rhs, mu,
-                            m_S, m_T, m_e_s, m_M_s,
-                            res_norm_a, res_norm_r, converged );
-                  printf("  norms: %1.3e (abs.), %1.3e (rel.); converged = %s\n",
-                         res_norm_a, res_norm_r, (converged ? "yes" : "no") );
+                while (1) {
+
+                    RT mu = 1.0 / dt;
+
+                    converged = true;
+                    res_norm_a = 0.0;
+                    res_norm_r = 0.0;
+
+                    RT u1 = a_u;
+                    {
+                        RT rhs = mu * a_u;
+                        RT res_norm_a_i = DBL_MAX;
+                        RT res_norm_r_i = DBL_MAX;
+                        bool converged_i = false;
+                        m_newton( u1, rhs, mu,
+                                  m_S, m_T, m_e_s, m_M_s,
+                                  res_norm_a_i, res_norm_r_i, converged_i );
+                        converged = converged && converged_i;
+                        res_norm_a = std::max(res_norm_a, res_norm_a_i);
+                        res_norm_r = std::max(res_norm_r, res_norm_r_i);
+                    }
+                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+
+                    RT u2 = u1;
+                    {
+                        RT rhs = mu * (a_u - dt*f1);
+                        RT res_norm_a_i = DBL_MAX;
+                        RT res_norm_r_i = DBL_MAX;
+                        bool converged_i = false;
+                        m_newton( u2, rhs, mu,
+                                  m_S, m_T, m_e_s, m_M_s,
+                                  res_norm_a_i, res_norm_r_i, converged_i );
+                        converged = converged && converged_i;
+                        res_norm_a = std::max(res_norm_a, res_norm_a_i);
+                        res_norm_r = std::max(res_norm_r, res_norm_r_i);
+                    }
+                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+
+                    u_new += 0.5 * dt * (f1 + f2);
+
+                    if (std::isfinite(std::sqrt(u_new)) && converged) {
+                        break;
+                    }
+                    dt *= 0.5;
+                    if (dt < (1.0e-12*m_t_final)) {
+                        break;
+                    }
+                    if (!std::isfinite(dt)) {
+                        break;
+                    }
                 }
-                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
 
-                RT u2 = u1;
-                {
-                  RT rhs = mu * (a_u - dt*f1);
-                  RT res_norm_a = DBL_MAX;
-                  RT res_norm_r = DBL_MAX;
-                  bool converged = false;
-                  m_newton( u2, rhs, mu,
-                            m_S, m_T, m_e_s, m_M_s,
-                            res_norm_a, res_norm_r, converged );
-                  printf("  norms: %1.3e (abs.), %1.3e (rel.); converged = %s\n",
-                         res_norm_a, res_norm_r, (converged ? "yes" : "no") );
-                }
-                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
-
-                a_u += 0.5 * dt * (f1 + f2);
-
+                a_u = u_new;
                 cur_time += dt;
 
-                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e\n",
-                        cur_time, dt, std::sqrt(a_u) );
+                printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
+                        cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u) );
+                printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                        res_norm_a, res_norm_r,
+                        (converged ? "yes" : "no") );
             }
         }
 

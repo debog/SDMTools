@@ -75,7 +75,7 @@ int main()
     SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt_RHSFunc,
                                       SuperDropletsUtils::dRsqdt_RHSJac,
                                       ParticleReal > newton_solver { drsqdt_rhsfun, drsqdt_rhsjac,
-                                                                     1.0e-6,1.0e-99,1.0e-12,100 };
+                                                                     1.0e-6,1.0e-99,1.0e-12,10 };
 
     Real tf; // s
     Real radius_init; // m
