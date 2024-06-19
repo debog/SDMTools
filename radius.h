@@ -129,9 +129,7 @@ namespace SuperDropletsUtils
                                     const ParticleReal a_S,
                                     const ParticleReal a_T,
                                     const ParticleReal a_e_s,
-                                    const ParticleReal a_M_s,
-                                    const bool a_include_curv,
-                                    const bool a_include_solute ) const noexcept
+                                    const ParticleReal a_M_s ) const noexcept
         {
             ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
             ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
@@ -142,15 +140,11 @@ namespace SuperDropletsUtils
             ParticleReal alpha = 2.0 * (a_S-1.0) / (F_k + F_d);
             ParticleReal retval = alpha;
 
-            if (a_include_curv) {
-              ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
-              retval += beta*R_inv;
-            }
+            ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
+            retval += beta*R_inv;
 
-            if (a_include_solute) {
-              ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
-              retval += gamma*R_inv_cubed;
-            }
+            ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
+            retval += gamma*R_inv_cubed;
 
             return retval;
         }
@@ -170,9 +164,7 @@ namespace SuperDropletsUtils
         ParticleReal operator() (   const ParticleReal a_R_sq,
                                     const ParticleReal a_T,
                                     const ParticleReal a_e_s,
-                                    const ParticleReal a_M_s,
-                                    const bool a_include_curv,
-                                    const bool a_include_solute ) const noexcept
+                                    const ParticleReal a_M_s ) const noexcept
         {
             ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
             ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
@@ -183,15 +175,11 @@ namespace SuperDropletsUtils
 
             ParticleReal retval = 0.0;
 
-            if (a_include_curv) {
-                ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
-                retval -= 0.5 * beta*R_inv_3;
-            }
+            ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
+            retval -= 0.5 * beta*R_inv_3;
 
-            if (a_include_solute) {
-                ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
-                retval -= 0.5 * 3.0*gamma*R_inv_5;
-            }
+            ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
+            retval -= 0.5 * 3.0*gamma*R_inv_5;
 
             return retval;
         }
@@ -211,13 +199,11 @@ namespace SuperDropletsUtils
 
         void operator()  (  RT&             a_u,
                             RT&             a_r,
-                            const RT&       a_dt,
+                            const RT&       a_mu,
                             const RT&       a_S,
                             const RT&       a_T,
                             const RT&       a_e_s,
                             const RT&       a_M_s,
-                            const bool      a_incl_curv,
-                            const bool      a_incl_sol,
                             RT&             a_res_norm_a,
                             RT&             a_res_norm_r,
                             bool&           a_converged ) const
@@ -226,16 +212,16 @@ namespace SuperDropletsUtils
             RT res_norm0 = 0.0;
 
             for (int k = 0; k < m_maxits; k++) {
-                RT residual = a_u
+                RT residual = a_mu * a_u
                               - (   a_r
-                                  + a_dt * m_rhs( a_u, a_S, a_T, a_e_s, a_M_s, a_incl_curv, a_incl_sol ));
+                                  + m_rhs( a_u, a_S, a_T, a_e_s, a_M_s ) );
                 a_res_norm_a = std::sqrt(residual*residual);
 
                 if (k == 0) { res_norm0 = a_res_norm_a; }
                 a_res_norm_r = a_res_norm_a / res_norm0;
 
-                printf("  iter: %3d, norm: %1.4e (abs.), %1.4e (rel.)\n",
-                        k, a_res_norm_a, a_res_norm_r );
+//                printf("  iter: %3d, norm: %1.4e (abs.), %1.4e (rel.)\n",
+//                        k, a_res_norm_a, a_res_norm_r );
 
                 if (a_res_norm_a <= m_atol) {
                     a_converged = true;
@@ -246,13 +232,9 @@ namespace SuperDropletsUtils
                     break;
                 }
 
-                RT slope = 1.0 - a_dt * m_jac( a_u, a_T, a_e_s, a_M_s, a_incl_curv, a_incl_sol );
+                RT slope = a_mu - m_jac( a_u, a_T, a_e_s, a_M_s );
                 RT du = 0.0;
-//                if ((slope*slope) < (10000*residual*residual)) {
-//                    du = 0.0;
-//                } else {
-                    du = - residual / slope;
-//                }
+                du = - residual / slope;
 
                 RT du_norm = std::sqrt(du*du);
                 RT u_norm = std::sqrt(a_u*a_u);
@@ -263,11 +245,231 @@ namespace SuperDropletsUtils
 
                 if (a_u + du < 0) {
                   a_u *= 0.99;
-                  //a_u += 0.01*a_u;
                 } else {
                   a_u += du;
                 }
             }
         }
+    };
+
+    template<typename RHSFunc, typename JacFunc, typename RT>
+    struct TIRK4
+    {
+        RHSFunc& m_rhs;
+        JacFunc& m_jac;
+
+        RT m_t_final;
+        RT m_S;
+        RT m_T;
+        RT m_e_s;
+        RT m_M_s;
+
+        RT m_cfl;
+
+        void operator() ( RT& a_u ) const
+        {
+            RT cur_time = 0.0;
+
+            while (cur_time < m_t_final) {
+
+                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT dt = m_cfl / std::sqrt(tau*tau);
+                if ((cur_time + dt) > m_t_final) {
+                    dt = m_t_final - cur_time;
+                }
+
+                RT u1 = a_u;
+                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+
+                RT u2 = a_u + 0.5*dt*f1;
+                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+
+                RT u3 = a_u + 0.5*dt*f2;
+                RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
+
+                RT u4 = a_u + 1.0*dt*f3;
+                RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
+
+                a_u += dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
+
+                cur_time += dt;
+
+                printf("Time %1.2e, dt = %1.2e, radius = %1.4e\n", cur_time, dt, std::sqrt(a_u));
+            }
+        }
+
+    };
+
+    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
+    struct TIBE
+    {
+        RHSFunc& m_rhs;
+        JacFunc& m_jac;
+        NewtonSolver& m_newton;
+
+        RT m_t_final;
+        RT m_S;
+        RT m_T;
+        RT m_e_s;
+        RT m_M_s;
+
+        RT m_cfl;
+
+        void operator() ( RT& a_u ) const
+        {
+            RT cur_time = 0.0;
+
+            while (cur_time < m_t_final) {
+
+                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT dt = m_cfl / std::sqrt(tau*tau);
+                if ((cur_time + dt) > m_t_final) {
+                    dt = m_t_final - cur_time;
+                }
+
+                RT mu = 1.0 / dt;
+                RT rhs = mu * a_u;
+
+                RT res_norm_a = DBL_MAX;
+                RT res_norm_r = DBL_MAX;
+                bool converged = false;
+
+                m_newton( a_u, rhs, mu,
+                          m_S, m_T, m_e_s, m_M_s,
+                          res_norm_a, res_norm_r, converged );
+
+
+                cur_time += dt;
+
+                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e;\n  norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                        cur_time, dt, std::sqrt(a_u),
+                        res_norm_a, res_norm_r,
+                        (converged ? "yes" : "no") );
+            }
+        }
+
+    };
+
+    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
+    struct TICN
+    {
+        RHSFunc& m_rhs;
+        JacFunc& m_jac;
+        NewtonSolver& m_newton;
+
+        RT m_t_final;
+        RT m_S;
+        RT m_T;
+        RT m_e_s;
+        RT m_M_s;
+
+        RT m_cfl;
+
+        void operator() ( RT& a_u ) const
+        {
+            RT cur_time = 0.0;
+
+            while (cur_time < m_t_final) {
+
+                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT dt = m_cfl / std::sqrt(tau*tau);
+                if ((cur_time + dt) > m_t_final) {
+                    dt = m_t_final - cur_time;
+                }
+
+                RT mu = 1.0 / (0.5*dt);
+
+                RT u1 = a_u;
+                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+
+                RT u2 = u1;
+                RT rhs = mu * (a_u + 0.5*dt*f1);
+                RT res_norm_a = DBL_MAX;
+                RT res_norm_r = DBL_MAX;
+                bool converged = false;
+                m_newton( u2, rhs, mu,
+                          m_S, m_T, m_e_s, m_M_s,
+                          res_norm_a, res_norm_r, converged );
+                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+
+                a_u += 0.5 * dt * (f1 + f2);
+
+                cur_time += dt;
+
+                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e;\n  norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                        cur_time, dt, std::sqrt(a_u),
+                        res_norm_a, res_norm_r,
+                        (converged ? "yes" : "no") );
+            }
+        }
+
+    };
+
+    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
+    struct TIDIRK212
+    {
+        RHSFunc& m_rhs;
+        JacFunc& m_jac;
+        NewtonSolver& m_newton;
+
+        RT m_t_final;
+        RT m_S;
+        RT m_T;
+        RT m_e_s;
+        RT m_M_s;
+
+        RT m_cfl;
+
+        void operator() ( RT& a_u ) const
+        {
+            RT cur_time = 0.0;
+
+            while (cur_time < m_t_final) {
+
+                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT dt = m_cfl / std::sqrt(tau*tau);
+                if ((cur_time + dt) > m_t_final) {
+                    dt = m_t_final - cur_time;
+                }
+
+                RT mu = 1.0 / dt;
+
+                RT u1 = a_u;
+                {
+                  RT rhs = mu * a_u;
+                  RT res_norm_a = DBL_MAX;
+                  RT res_norm_r = DBL_MAX;
+                  bool converged = false;
+                  m_newton( u1, rhs, mu,
+                            m_S, m_T, m_e_s, m_M_s,
+                            res_norm_a, res_norm_r, converged );
+                  printf("  norms: %1.3e (abs.), %1.3e (rel.); converged = %s\n",
+                         res_norm_a, res_norm_r, (converged ? "yes" : "no") );
+                }
+                RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+
+                RT u2 = u1;
+                {
+                  RT rhs = mu * (a_u - dt*f1);
+                  RT res_norm_a = DBL_MAX;
+                  RT res_norm_r = DBL_MAX;
+                  bool converged = false;
+                  m_newton( u2, rhs, mu,
+                            m_S, m_T, m_e_s, m_M_s,
+                            res_norm_a, res_norm_r, converged );
+                  printf("  norms: %1.3e (abs.), %1.3e (rel.); converged = %s\n",
+                         res_norm_a, res_norm_r, (converged ? "yes" : "no") );
+                }
+                RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+
+                a_u += 0.5 * dt * (f1 + f2);
+
+                cur_time += dt;
+
+                printf( "Time %1.2e, dt = %1.2e, radius = %1.4e\n",
+                        cur_time, dt, std::sqrt(a_u) );
+            }
+        }
+
     };
 }

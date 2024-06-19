@@ -78,90 +78,68 @@ int main()
 
     Real a_dt = 0.5; // s
     Real tf = 0.5; // s
-//    Real density = 1.2; // kg m^{-3}
-//    Real temperature = 280.0; // K
-//    Real solute_mass = 3.3510322e-23; // kg
-//    Real qv = 0.0; // vapour fraction
 
-//    Real theta = getThgivenRandT(density, temperature, R_d/Cp_d, qv);
-//    Real pressure = getPgivenRTh( density*theta, qv );
-//    Real pressure_dry = getPgivenRTh( density*theta );
-//    Real e_sat = erf_esatw(temperature)*100;
-//    Real sat_humidity; erf_qsatw(temperature, pressure/100.0, sat_humidity);
-//    Real sat_ratio = qv/sat_humidity;
-
-//    Real radius_init_cubed = solute_mass / ((4.0/3.0)*PI*mat_density);
-//    Real radius_init = std::exp((1.0/3.0)*std::log(radius_init_cubed));
-
-      Real radius_init = 1.6748613302369350e-06;
-      Real sat_ratio = 9.5491349965581285e-01;
-      Real temperature = 2.9181345858904893e+02;
-      Real e_sat = 2.1493020629790435e+03;
-      Real solute_mass = 6.1815354741336143e-17;
+    Real radius_init = 1e-8; // m
+    Real sat_ratio = 1.01;
+    Real temperature = 300.0; // K
+    Real e_sat = 2.1493020629790435e+03;
+    Real solute_mass = 1e-19; // kg
 
     printf("Solute mass: %1.4e kg\n", solute_mass);
     printf("Temperature: %1.4e K\n", temperature);
-//    printf("Pressure: %1.4e Pa, %1.4e Pa (dry), %1.4e (diff)\n",
-//            pressure, pressure_dry, pressure - pressure_dry);
-//    printf("Theta: %1.4e\n", theta);
     printf("Saturation pressure: %1.4e Pa\n", e_sat);
-//    printf("Saturation humidity: %1.4e\n", sat_humidity);
     printf("Saturation ratio: %1.4e\n", sat_ratio);
 
     Real radius = radius_init;
-    printf("Initial radius: %1.16e m\n", radius);
+    printf("Initial radius: %1.16e\n", radius);
 
-    for (Real t = 0.0; t < tf; t += a_dt) {
+    Real init_timescale = drsqdt_rhsjac(  radius*radius,
+                                          temperature,
+                                          e_sat,
+                                          solute_mass );
+    printf("Initial timescale: %1.4e\n", 1.0 / std::sqrt(init_timescale*init_timescale));
 
-      Real r_sq_0 = radius_init * radius_init;
+    Real cfl = 0.0009;
 
-      // Initial guess
-      Real ivt_sd = 1.0 / temperature;
-      //Real a = 1.0 / (temperature - 35.86);
-      //Real b = a * (temperature - 273.15);
-      printf("Curvature coeff: %1.1e\n", m_vapour_mat->coeffCurv());
-      Real eq_a = m_vapour_mat->coeffCurv() * ivt_sd;
-      Real eq_b = m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]) * solute_mass;
-      Real Rc = std::sqrt(eq_b/eq_a);
-      Real eq_c = sat_ratio - 1.0;
-      Real a = eq_a / eq_c;
-      Real b = eq_b / eq_c;
-      Real a3 = a*a*a;
+    SuperDropletsUtils::TIRK4< SuperDropletsUtils::dRsqdt_RHSFunc,
+                               SuperDropletsUtils::dRsqdt_RHSJac,
+                               ParticleReal > ti_rk4 { drsqdt_rhsfun, drsqdt_rhsjac,
+                                                       tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                       cfl };
 
-      Real r_init = radius_init;
-      if ( (sat_ratio > 1.0) && (a3 < b*(27.0/4.0)) ) {
-        r_init = 1.0e-3;
-      }
-      if (r_init < Rc) {
-        r_init = Rc;
-      }
-      printf("  Rc = %1.16e\n", Rc);
+    SuperDropletsUtils::TIBE < SuperDropletsUtils::dRsqdt_RHSFunc,
+                               SuperDropletsUtils::dRsqdt_RHSJac,
+                               SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
+                                                                SuperDropletsUtils::dRsqdt_RHSJac,
+                                                                ParticleReal>,
+                               ParticleReal > ti_be { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                      cfl };
 
-      printf("  initial guess: %1.16e\n", r_init);
+    SuperDropletsUtils::TICN < SuperDropletsUtils::dRsqdt_RHSFunc,
+                               SuperDropletsUtils::dRsqdt_RHSJac,
+                               SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
+                                                                SuperDropletsUtils::dRsqdt_RHSJac,
+                                                                ParticleReal>,
+                               ParticleReal > ti_cn { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                      cfl };
 
-      Real r_sq = r_init * r_init;
+    SuperDropletsUtils::TIDIRK212 < SuperDropletsUtils::dRsqdt_RHSFunc,
+                                    SuperDropletsUtils::dRsqdt_RHSJac,
+                                    SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
+                                                                     SuperDropletsUtils::dRsqdt_RHSJac,
+                                                                     ParticleReal>,
+                                    ParticleReal > ti_dirk2 { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                                              tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                              cfl };
 
-      Real res_norm_a = DBL_MAX, res_norm_r = DBL_MAX;
-      bool converged = false;
-      newton_solver ( r_sq, r_sq_0,
-                      a_dt,
-                      sat_ratio, temperature, e_sat, solute_mass,
-                      true, true,
-                      res_norm_a, res_norm_r,
-                      converged );
-
-      if (converged) {
-
-        radius = std::sqrt(r_sq);
-
-      }
-
-      printf( "Time %1.2e, radius = %1.4e, converged=%s (res norm: %1.3e abs, %1.3e res)\n",
-              t+a_dt,
-              radius,
-              (converged ? "yes" : "no"), res_norm_a, res_norm_r );
-    }
-
+    Real r_sq = radius_init * radius_init;
+    //ti_rk4(r_sq);
+    //ti_be(r_sq);
+    //ti_cn(r_sq);
+    ti_dirk2(r_sq);
+    radius = std::sqrt(r_sq);
     printf("Final radius: %1.16e m\n", radius);
 
     return 0;
