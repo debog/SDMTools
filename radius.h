@@ -236,10 +236,6 @@ namespace SuperDropletsUtils
 
         bool m_verbose;
 
-        void initial_guess (  RT& a_u ) const
-        {
-        }
-
         void rk4 ( RT& a_u ) const
         {
             RT cur_time = 0.0;
