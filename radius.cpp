@@ -41,7 +41,7 @@ void MaterialProperties::setProperties_NaCl()
     m_Rv = DBL_MAX;
 }
 
-int main()
+void runSingle()
 {
     std::unique_ptr<MaterialProperties> m_vapour_mat;
     std::vector<std::unique_ptr<MaterialProperties>> m_aerosol_mat;
@@ -83,10 +83,6 @@ int main()
 
     FILE* in;
     in = fopen("input", "r");
-    if (!in) {
-        printf("ERROR: no input file!\n");
-        return 1;
-    }
     fscanf(in, "%lf", &tf);
     fscanf(in, "%lf", &radius_init);
     fscanf(in, "%lf", &sat_ratio);
@@ -97,6 +93,7 @@ int main()
     fscanf(in, "%s" , temp );
     ti_choice = std::string(temp);
     fscanf(in, "%lf", &cfl);
+    fclose(in);
 
     printf("Solute mass: %1.4e kg\n", solute_mass);
     printf("Temperature: %1.4e K\n", temperature);
@@ -115,7 +112,7 @@ int main()
                                                               ParticleReal>,
                              ParticleReal > ti { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
                                                  tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                 cfl };
+                                                 cfl, 1e-6, true };
 
     Real r_sq = radius_init * radius_init;
     if (ti_choice == "rk4") {
@@ -128,10 +125,132 @@ int main()
         ti.dirk212(r_sq);
     } else {
         printf("ERROR: invalid time integrator choice!\n");
-        return 1;
+        return;
     }
     radius = std::sqrt(r_sq);
     printf("Final radius: %1.16e m\n", radius);
+
+    return;
+}
+
+void runBatch()
+{
+    std::unique_ptr<MaterialProperties> m_vapour_mat;
+    std::vector<std::unique_ptr<MaterialProperties>> m_aerosol_mat;
+    m_vapour_mat = std::make_unique<MaterialProperties>("H2O");
+    m_aerosol_mat.push_back(std::make_unique<MaterialProperties>("NaCl"));
+
+    const Real mat_density = m_vapour_mat->density();
+
+    SuperDropletsUtils::dRsqdt_RHSFunc drsqdt_rhsfun{m_vapour_mat->coeffCurv(),
+                                                     m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
+                                                     m_vapour_mat->latHeatVap(),
+                                                     therco, // ERF_Constants.H
+                                                     m_vapour_mat->Rv(),
+                                                     mat_density,
+                                                     diffelq};
+
+    SuperDropletsUtils::dRsqdt_RHSJac drsqdt_rhsjac{m_vapour_mat->coeffCurv(),
+                                                    m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
+                                                    m_vapour_mat->latHeatVap(),
+                                                    therco, // ERF_Constants.H
+                                                    m_vapour_mat->Rv(),
+                                                    mat_density,
+                                                    diffelq};
+
+    SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt_RHSFunc,
+                                      SuperDropletsUtils::dRsqdt_RHSJac,
+                                      ParticleReal > newton_solver { drsqdt_rhsfun, drsqdt_rhsjac,
+                                                                     1.0e-6,1.0e-99,1.0e-12,10 };
+
+    Real tf = 1.0; // s
+    std::string ti_choice = "rk4";
+    Real cfl = 1.0;
+
+    FILE* in;
+    in = fopen("input.ti", "r");
+    if (in) {
+        char temp[100];
+        fscanf(in, "%lf", &tf);
+        fscanf(in, "%s" , temp );
+        ti_choice = std::string(temp);
+        fscanf(in, "%lf", &cfl);
+        fclose(in);
+    } else {
+        printf("Warning: input.ti not found; using default (RK4, CFL=1.0).\n");
+    }
+
+    printf("Final time: %1.2e\n", tf);
+    printf("Time integration: %s\n", ti_choice.c_str());
+    printf("CFL: %1.1e\n", cfl);
+
+    in = fopen("inputs.batch", "r");
+
+    while (1) {
+
+        Real radius_init; // m
+        Real sat_ratio;
+        Real temperature; // K
+        Real e_sat;
+        Real solute_mass; // kg
+        Real norm;
+
+        auto ierr = fscanf( in,
+                            "r=%lf, S=%lf, T=%lf, e=%lf, sol_mass=%lf, norms=%lf(abs),%lf(rel)\n",
+                            &radius_init, &sat_ratio, &temperature, &e_sat, &solute_mass,
+                            &norm, &norm );
+        if (ierr != 7) {
+            break;
+        }
+
+        SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt_RHSFunc,
+                                 SuperDropletsUtils::dRsqdt_RHSJac,
+                                 SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
+                                                                  SuperDropletsUtils::dRsqdt_RHSJac,
+                                                                  ParticleReal>,
+                                 ParticleReal > ti { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                                     tf, sat_ratio, temperature, e_sat, solute_mass,
+                                                     cfl, 1e-6, false };
+
+        Real r_sq = radius_init * radius_init;
+        if (ti_choice == "rk4") {
+            ti.rk4(r_sq);
+        } else if (ti_choice == "backward_euler") {
+            ti.be(r_sq);
+        } else if (ti_choice == "cn") {
+            ti.cn(r_sq);
+        } else if (ti_choice == "dirk2") {
+            ti.dirk212(r_sq);
+        } else {
+            printf("ERROR: invalid time integrator choice!\n");
+            return;
+        }
+        Real radius = std::sqrt(r_sq);
+        printf("Radius: %1.16e (initial), %1.16e (final)\n", radius_init, radius);
+    }
+
+    return;
+}
+
+int main()
+{
+    FILE* in;
+    in = fopen("inputs.batch", "r");
+    if (in) {
+        fclose(in);
+        printf("Found inputs.batch; running in batch mode.\n");
+        runBatch();
+    } else {
+        in = fopen("input", "r");
+        if (in) {
+            printf("Found input; running single case.\n");
+            fclose(in);
+            runSingle();
+        } else {
+            printf("ERROR: no input file(s)!\n");
+            return 1;
+        }
+    }
 
     return 0;
 }
