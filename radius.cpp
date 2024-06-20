@@ -186,6 +186,9 @@ void runBatch()
 
     in = fopen("inputs.batch", "r");
 
+    FILE* out;
+    out = fopen("radius.out", "w");
+
     while (1) {
 
         Real radius_init; // m
@@ -200,6 +203,7 @@ void runBatch()
                             &radius_init, &sat_ratio, &temperature, &e_sat, &solute_mass,
                             &norm, &norm );
         if (ierr != 7) {
+            fclose(in);
             break;
         }
 
@@ -227,7 +231,10 @@ void runBatch()
         }
         Real radius = std::sqrt(r_sq);
         printf("Radius: %1.16e (initial), %1.16e (final)\n", radius_init, radius);
+        fprintf(out, "%1.16e    %1.16e\n", radius_init, radius);
     }
+
+    fclose(out);
 
     return;
 }
