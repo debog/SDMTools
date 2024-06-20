@@ -198,6 +198,10 @@ namespace SuperDropletsUtils
                     a_converged = true;
                     break;
                 }
+                if (!std::isfinite(a_res_norm_a)) {
+                    a_converged = false;
+                    break;
+                }
 
                 RT slope = a_mu - m_ode.rhs_jac( a_u, a_T, a_e_s, a_M_s );
                 RT du = 0.0;
@@ -210,11 +214,7 @@ namespace SuperDropletsUtils
                     break;
                 }
 
-                if (a_u + du < 0) {
-                  a_u *= 0.99;
-                } else {
-                  a_u += du;
-                }
+                a_u += du;
             }
         }
     };
