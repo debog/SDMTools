@@ -457,7 +457,7 @@ namespace SuperDropletsUtils
                               res_norm_a, res_norm_r, converged );
                     RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
-                    u_new += 0.5 * dt * (f1 + f2);
+                    u_new = a_u + 0.5 * dt * (f1 + f2);
 
                     if (std::isfinite(std::sqrt(u_new)) && converged) {
                         break;
@@ -539,7 +539,7 @@ namespace SuperDropletsUtils
                     }
                     RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
-                    u_new += 0.5 * dt * (f1 + f2);
+                    u_new = a_u + 0.5 * dt * (f1 + f2);
 
                     if (std::isfinite(std::sqrt(u_new)) && converged) {
                         break;
