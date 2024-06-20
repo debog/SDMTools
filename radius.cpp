@@ -72,6 +72,7 @@ void runSingle()
 
     std::string ti_choice = "noname";
     Real cfl = 1.0;
+    bool adapt_dt = false;
 
     FILE* in;
     in = fopen("input", "r");
@@ -85,6 +86,9 @@ void runSingle()
     fscanf(in, "%s" , temp );
     ti_choice = std::string(temp);
     fscanf(in, "%lf", &cfl);
+    int adapt_dt_int;
+    fscanf(in, "%i", &adapt_dt_int);
+    adapt_dt = (adapt_dt_int != 0);
     fclose(in);
 
     printf("Solute mass: %1.4e kg\n", solute_mass);
@@ -93,6 +97,7 @@ void runSingle()
     printf("Saturation ratio: %1.4e\n", sat_ratio);
     printf("Time integration: %s\n", ti_choice.c_str());
     printf("CFL: %1.1e\n", cfl);
+    printf("Adapt dt: %s\n", (adapt_dt ? "true" : "false"));
 
     Real radius = radius_init;
     printf("Initial radius: %1.16e\n", radius);
@@ -102,11 +107,13 @@ void runSingle()
                                                               ParticleReal>,
                              ParticleReal > ti { drsqdt, newton_solver,
                                                  tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                 cfl, 1e-6, true };
+                                                 cfl, 1e-40, 1e-3, 1e-6, adapt_dt, true };
 
     Real r_sq = radius_init * radius_init;
     if (ti_choice == "rk4") {
         ti.rk4(r_sq);
+    } else if (ti_choice == "rk3bs") {
+        ti.rk3bs(r_sq);
     } else if (ti_choice == "backward_euler") {
         ti.be(r_sq);
     } else if (ti_choice == "cn") {
@@ -148,6 +155,7 @@ void runBatch()
     Real tf = 1.0; // s
     std::string ti_choice = "rk4";
     Real cfl = 1.0;
+    bool adapt_dt = false;
 
     FILE* in;
     in = fopen("input.ti", "r");
@@ -157,6 +165,9 @@ void runBatch()
         fscanf(in, "%s" , temp );
         ti_choice = std::string(temp);
         fscanf(in, "%lf", &cfl);
+        int adapt_dt_int;
+        fscanf(in, "%i", &adapt_dt_int);
+        adapt_dt = (adapt_dt_int != 0);
         fclose(in);
     } else {
         printf("Warning: input.ti not found; using default (RK4, CFL=1.0).\n");
@@ -165,6 +176,7 @@ void runBatch()
     printf("Final time: %1.2e\n", tf);
     printf("Time integration: %s\n", ti_choice.c_str());
     printf("CFL: %1.1e\n", cfl);
+    printf("Adapt dt: %s\n", (adapt_dt ? "true" : "false"));
 
     in = fopen("inputs.batch", "r");
 
@@ -194,7 +206,7 @@ void runBatch()
                                                                   ParticleReal>,
                                  ParticleReal > ti { drsqdt, newton_solver,
                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                     cfl, 1e-6 };
+                                                     cfl, 1e-12, 1e-2, 1e-6, adapt_dt, false };
 
         Real r_sq = radius_init * radius_init;
         if (ti_choice == "rk4") {

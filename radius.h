@@ -232,9 +232,87 @@ namespace SuperDropletsUtils
         RT m_M_s;
 
         RT m_cfl;
+        RT m_atol;
+        RT m_rtol;
         RT m_stol;
 
+        bool m_adapt_dt;
         bool m_verbose;
+
+        void rk3bs ( RT& a_u ) const
+        {
+            RT cur_time = 0.0;
+
+            RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
+            RT dt = m_cfl / std::sqrt(tau*tau);
+
+            RT dt_new = dt;
+            RT a_u_old = a_u;
+
+            while (cur_time < m_t_final) {
+
+                if (!m_adapt_dt) {
+                    tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
+                    dt = m_cfl / std::sqrt(tau*tau);
+                } else {
+                    dt = dt_new;
+                }
+
+                if ((cur_time + dt) > m_t_final) {
+                    dt = m_t_final - cur_time;
+                }
+
+                RT u_new = 0.0;
+                while (1) {
+
+                    RT u1 = a_u;
+                    RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
+
+                    RT u2 = a_u + 0.5*dt*f1;
+                    RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
+
+                    RT u3 = a_u + 0.75*dt*f2;
+                    RT f3 = m_ode.rhs_func(u3, m_S, m_T, m_e_s, m_M_s);
+
+                    RT u4 = a_u + (1.0/9.0)*dt * (2.0*f1 + 3.0*f2 + 4.0*f3);
+                    RT f4 = m_ode.rhs_func(u4, m_S, m_T, m_e_s, m_M_s);
+
+                    u_new = u4;
+
+                    if (m_adapt_dt) {
+                        RT u_embed = a_u + (1.0/24.0)*dt * (7.0*f1 + 6.0*f2 + 8.0*f3 + 3.0*f4);
+                        RT err = std::sqrt((u_new-u_embed)*(u_new-u_embed));
+                        RT tol = m_atol + m_rtol * std::max(a_u, a_u_old);
+                        RT E = err / tol;
+                        dt_new = dt * std::exp((1.0/3)*std::log(1.0/E));
+                    }
+
+                    if (std::isfinite(std::sqrt(u_new))) {
+                        break;
+                    }
+                    dt *= 0.5;
+                    if (dt < (1.0e-12*m_t_final)) {
+                        break;
+                    }
+                    if (!std::isfinite(dt)) {
+                        break;
+                    }
+                }
+
+                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                a_u_old = a_u;
+                a_u = u_new;
+                cur_time += dt;
+
+                if (m_verbose) {
+                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                }
+                if (snorm < m_stol) {
+                    break;
+                }
+            }
+        }
 
         void rk4 ( RT& a_u ) const
         {
