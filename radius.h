@@ -471,6 +471,7 @@ namespace SuperDropletsUtils
                     }
                 }
 
+                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
                 a_u = u_new;
                 cur_time += dt;
 
@@ -480,6 +481,9 @@ namespace SuperDropletsUtils
                     printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
                             res_norm_a, res_norm_r,
                             (converged ? "yes" : "no") );
+                }
+                if (snorm < m_stol) {
+                    break;
                 }
             }
         }
@@ -553,6 +557,7 @@ namespace SuperDropletsUtils
                     }
                 }
 
+                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
                 a_u = u_new;
                 cur_time += dt;
 
@@ -562,6 +567,9 @@ namespace SuperDropletsUtils
                     printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
                             res_norm_a, res_norm_r,
                             (converged ? "yes" : "no") );
+                }
+                if (snorm < m_stol) {
+                    break;
                 }
             }
         }
