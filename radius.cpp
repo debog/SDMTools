@@ -231,7 +231,8 @@ void runBatch()
         }
         Real radius = std::sqrt(r_sq);
         printf("Radius: %1.16e (initial), %1.16e (final)\n", radius_init, radius);
-        fprintf(out, "%1.16e    %1.16e\n", radius_init, radius);
+        fprintf(out, "%1.16e %1.16e %1.16e %1.16e %1.16e %1.16e\n",
+                radius_init, radius, sat_ratio, temperature, e_sat, solute_mass);
     }
 
     fclose(out);
