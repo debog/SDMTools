@@ -50,26 +50,18 @@ void runSingle()
 
     const Real mat_density = m_vapour_mat->density();
 
-    SuperDropletsUtils::dRsqdt_RHSFunc drsqdt_rhsfun{m_vapour_mat->coeffCurv(),
-                                                     m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
-                                                     m_vapour_mat->latHeatVap(),
-                                                     therco, // ERF_Constants.H
-                                                     m_vapour_mat->Rv(),
-                                                     mat_density,
-                                                     diffelq};
+    SuperDropletsUtils::dRsqdt drsqdt{m_vapour_mat->coeffCurv(),
+                                      m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
+                                      m_vapour_mat->latHeatVap(),
+                                      therco, // ERF_Constants.H
+                                      m_vapour_mat->Rv(),
+                                      mat_density,
+                                      diffelq};
 
-    SuperDropletsUtils::dRsqdt_RHSJac drsqdt_rhsjac{m_vapour_mat->coeffCurv(),
-                                                    m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
-                                                    m_vapour_mat->latHeatVap(),
-                                                    therco, // ERF_Constants.H
-                                                    m_vapour_mat->Rv(),
-                                                    mat_density,
-                                                    diffelq};
-
-    SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt_RHSFunc,
-                                      SuperDropletsUtils::dRsqdt_RHSJac,
-                                      ParticleReal > newton_solver { drsqdt_rhsfun, drsqdt_rhsjac,
-                                                                     1.0e-6,1.0e-99,1.0e-12,10 };
+    SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt,
+                                      ParticleReal > newton_solver { drsqdt,
+                                                                     1.0e-6,1.0e-99,1.0e-12,10,
+                                                                     false };
 
     Real tf; // s
     Real radius_init; // m
@@ -105,12 +97,10 @@ void runSingle()
     Real radius = radius_init;
     printf("Initial radius: %1.16e\n", radius);
 
-    SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt_RHSFunc,
-                             SuperDropletsUtils::dRsqdt_RHSJac,
-                             SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
-                                                              SuperDropletsUtils::dRsqdt_RHSJac,
+    SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt,
+                             SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt,
                                                               ParticleReal>,
-                             ParticleReal > ti { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                             ParticleReal > ti { drsqdt, newton_solver,
                                                  tf, sat_ratio, temperature, e_sat, solute_mass,
                                                  cfl, 1e-6, true };
 
@@ -142,26 +132,18 @@ void runBatch()
 
     const Real mat_density = m_vapour_mat->density();
 
-    SuperDropletsUtils::dRsqdt_RHSFunc drsqdt_rhsfun{m_vapour_mat->coeffCurv(),
-                                                     m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
-                                                     m_vapour_mat->latHeatVap(),
-                                                     therco, // ERF_Constants.H
-                                                     m_vapour_mat->Rv(),
-                                                     mat_density,
-                                                     diffelq};
+    SuperDropletsUtils::dRsqdt drsqdt{m_vapour_mat->coeffCurv(),
+                                      m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
+                                      m_vapour_mat->latHeatVap(),
+                                      therco, // ERF_Constants.H
+                                      m_vapour_mat->Rv(),
+                                      mat_density,
+                                      diffelq};
 
-    SuperDropletsUtils::dRsqdt_RHSJac drsqdt_rhsjac{m_vapour_mat->coeffCurv(),
-                                                    m_vapour_mat->coeffVPSolute(*m_aerosol_mat[0]),
-                                                    m_vapour_mat->latHeatVap(),
-                                                    therco, // ERF_Constants.H
-                                                    m_vapour_mat->Rv(),
-                                                    mat_density,
-                                                    diffelq};
-
-    SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt_RHSFunc,
-                                      SuperDropletsUtils::dRsqdt_RHSJac,
-                                      ParticleReal > newton_solver { drsqdt_rhsfun, drsqdt_rhsjac,
-                                                                     1.0e-6,1.0e-99,1.0e-12,10 };
+    SuperDropletsUtils::NewtonSolver< SuperDropletsUtils::dRsqdt,
+                                      ParticleReal > newton_solver { drsqdt,
+                                                                     1.0e-6,1.0e-99,1.0e-12,10,
+                                                                     false };
 
     Real tf = 1.0; // s
     std::string ti_choice = "rk4";
@@ -207,14 +189,12 @@ void runBatch()
             break;
         }
 
-        SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt_RHSFunc,
-                                 SuperDropletsUtils::dRsqdt_RHSJac,
-                                 SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt_RHSFunc,
-                                                                  SuperDropletsUtils::dRsqdt_RHSJac,
+        SuperDropletsUtils::TI < SuperDropletsUtils::dRsqdt,
+                                 SuperDropletsUtils::NewtonSolver<SuperDropletsUtils::dRsqdt,
                                                                   ParticleReal>,
-                                 ParticleReal > ti { drsqdt_rhsfun, drsqdt_rhsjac, newton_solver,
+                                 ParticleReal > ti { drsqdt, newton_solver,
                                                      tf, sat_ratio, temperature, e_sat, solute_mass,
-                                                     cfl, 1e-6, false };
+                                                     cfl, 1e-6 };
 
         Real r_sq = radius_init * radius_init;
         if (ti_choice == "rk4") {

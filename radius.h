@@ -60,7 +60,7 @@ class MaterialProperties {
 
 namespace SuperDropletsUtils
 {
-    struct dRsqdt_RHSFunc
+    struct dRsqdt
     {
         ParticleReal a;
         ParticleReal b;
@@ -70,11 +70,11 @@ namespace SuperDropletsUtils
         ParticleReal rho_l;
         ParticleReal D;
 
-        ParticleReal operator() (   const ParticleReal a_R_sq,
-                                    const ParticleReal a_S,
-                                    const ParticleReal a_T,
-                                    const ParticleReal a_e_s,
-                                    const ParticleReal a_M_s ) const noexcept
+        ParticleReal rhs_func (   const ParticleReal a_R_sq,
+                                  const ParticleReal a_S,
+                                  const ParticleReal a_T,
+                                  const ParticleReal a_e_s,
+                                  const ParticleReal a_M_s ) const noexcept
         {
             ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
             ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
@@ -94,22 +94,10 @@ namespace SuperDropletsUtils
             return retval;
         }
 
-    };
-
-    struct dRsqdt_RHSJac
-    {
-        ParticleReal a;
-        ParticleReal b;
-        ParticleReal L;
-        ParticleReal K;
-        ParticleReal Rv;
-        ParticleReal rho_l;
-        ParticleReal D;
-
-        ParticleReal operator() (   const ParticleReal a_R_sq,
-                                    const ParticleReal a_T,
-                                    const ParticleReal a_e_s,
-                                    const ParticleReal a_M_s ) const noexcept
+        ParticleReal rhs_jac (   const ParticleReal a_R_sq,
+                                 const ParticleReal a_T,
+                                 const ParticleReal a_e_s,
+                                 const ParticleReal a_M_s ) const noexcept
         {
             ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
             ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
@@ -129,18 +117,42 @@ namespace SuperDropletsUtils
             return retval;
         }
 
+        void initial_guess ( ParticleReal&      a_R_sq,
+                             const ParticleReal a_S,
+                             const ParticleReal a_T,
+                             const ParticleReal a_M_s ) const noexcept
+        {
+            ParticleReal eq_a = a / a_T;
+            ParticleReal eq_b = b * a_M_s;
+            ParticleReal Rc = std::sqrt(3*eq_b/eq_a);
+            ParticleReal eq_c = a_S - 1.0;
+            ParticleReal a = eq_a / eq_c;
+            ParticleReal b = eq_b / eq_c;
+            ParticleReal a3 = a*a*a;
+
+            Real r_init = std::sqrt(a_R_sq);
+            if ( (a_S > 1.0) && (a3 < b*(27.0/4.0)) ) {
+                r_init = 1.0e-3;
+            }
+            if (r_init < Rc) {
+                r_init = Rc;
+            }
+            a_R_sq = r_init*r_init;
+        }
+
     };
 
-    template<typename RHSFunc, typename JacFunc, typename RT>
+    template<typename ODE, typename RT>
     struct NewtonSolver
     {
-        RHSFunc&  m_rhs;
-        JacFunc&  m_jac;
+        ODE&  m_ode;
 
         RT  m_rtol;
         RT  m_atol;
         RT  m_stol;
         int m_maxits;
+
+        bool m_init_guess;
 
         void operator()  (  RT&             a_u,
                             RT&             a_r,
@@ -156,10 +168,14 @@ namespace SuperDropletsUtils
             a_converged = false;
             RT res_norm0 = 0.0;
 
+            if (m_init_guess) {
+                m_ode.initial_guess(a_u, a_S, a_T, a_M_s);
+            }
+
             for (int k = 0; k < m_maxits; k++) {
                 RT residual = a_mu * a_u
                               - (   a_r
-                                  + m_rhs( a_u, a_S, a_T, a_e_s, a_M_s ) );
+                                  + m_ode.rhs_func( a_u, a_S, a_T, a_e_s, a_M_s ) );
                 a_res_norm_a = std::sqrt(residual*residual);
 
                 if (k == 0) {
@@ -183,7 +199,7 @@ namespace SuperDropletsUtils
                     break;
                 }
 
-                RT slope = a_mu - m_jac( a_u, a_T, a_e_s, a_M_s );
+                RT slope = a_mu - m_ode.rhs_jac( a_u, a_T, a_e_s, a_M_s );
                 RT du = 0.0;
                 du = - residual / slope;
 
@@ -203,11 +219,10 @@ namespace SuperDropletsUtils
         }
     };
 
-    template<typename RHSFunc, typename JacFunc, typename NewtonSolver, typename RT>
+    template<typename ODE, typename NewtonSolver, typename RT>
     struct TI
     {
-        RHSFunc& m_rhs;
-        JacFunc& m_jac;
+        ODE& m_ode;
         NewtonSolver& m_newton;
 
         RT m_t_final;
@@ -221,13 +236,17 @@ namespace SuperDropletsUtils
 
         bool m_verbose;
 
+        void initial_guess (  RT& a_u ) const
+        {
+        }
+
         void rk4 ( RT& a_u ) const
         {
             RT cur_time = 0.0;
 
             while (cur_time < m_t_final) {
 
-                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
                 RT dt = m_cfl / std::sqrt(tau*tau);
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
@@ -237,16 +256,16 @@ namespace SuperDropletsUtils
                 while (1) {
 
                     RT u1 = a_u;
-                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+                    RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
 
                     RT u2 = a_u + 0.5*dt*f1;
-                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+                    RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
                     RT u3 = a_u + 0.5*dt*f2;
-                    RT f3 = m_rhs(u3, m_S, m_T, m_e_s, m_M_s);
+                    RT f3 = m_ode.rhs_func(u3, m_S, m_T, m_e_s, m_M_s);
 
                     RT u4 = a_u + 1.0*dt*f3;
-                    RT f4 = m_rhs(u4, m_S, m_T, m_e_s, m_M_s);
+                    RT f4 = m_ode.rhs_func(u4, m_S, m_T, m_e_s, m_M_s);
 
                     u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
 
@@ -282,7 +301,7 @@ namespace SuperDropletsUtils
 
             while (cur_time < m_t_final) {
 
-                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
                 RT dt = m_cfl / std::sqrt(tau*tau);
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
@@ -338,7 +357,7 @@ namespace SuperDropletsUtils
 
             while (cur_time < m_t_final) {
 
-                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
                 RT dt = m_cfl / std::sqrt(tau*tau);
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
@@ -355,14 +374,14 @@ namespace SuperDropletsUtils
                     RT mu = 1.0 / (0.5*dt);
 
                     RT u1 = a_u;
-                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+                    RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
 
                     RT u2 = u1;
                     RT rhs = mu * (a_u + 0.5*dt*f1);
                     m_newton( u2, rhs, mu,
                               m_S, m_T, m_e_s, m_M_s,
                               res_norm_a, res_norm_r, converged );
-                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+                    RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
                     u_new += 0.5 * dt * (f1 + f2);
 
@@ -397,7 +416,7 @@ namespace SuperDropletsUtils
 
             while (cur_time < m_t_final) {
 
-                RT tau = m_jac(a_u, m_T, m_e_s, m_M_s);
+                RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
                 RT dt = m_cfl / std::sqrt(tau*tau);
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
@@ -429,7 +448,7 @@ namespace SuperDropletsUtils
                         res_norm_a = std::max(res_norm_a, res_norm_a_i);
                         res_norm_r = std::max(res_norm_r, res_norm_r_i);
                     }
-                    RT f1 = m_rhs(u1, m_S, m_T, m_e_s, m_M_s);
+                    RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
 
                     RT u2 = u1;
                     {
@@ -444,7 +463,7 @@ namespace SuperDropletsUtils
                         res_norm_a = std::max(res_norm_a, res_norm_a_i);
                         res_norm_r = std::max(res_norm_r, res_norm_r_i);
                     }
-                    RT f2 = m_rhs(u2, m_S, m_T, m_e_s, m_M_s);
+                    RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
                     u_new += 0.5 * dt * (f1 + f2);
 
