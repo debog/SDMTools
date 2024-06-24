@@ -110,16 +110,17 @@ void runSingle()
                                                  cfl, 1e-40, 1e-3, 1e-6, adapt_dt, true };
 
     Real r_sq = radius_init * radius_init;
+    bool success = false;
     if (ti_choice == "rk4") {
-        ti.rk4(r_sq);
+        ti.rk4(r_sq, success);
     } else if (ti_choice == "rk3bs") {
-        ti.rk3bs(r_sq);
+        ti.rk3bs(r_sq, success);
     } else if (ti_choice == "backward_euler") {
-        ti.be(r_sq);
+        ti.be(r_sq, success);
     } else if (ti_choice == "cn") {
-        ti.cn(r_sq);
+        ti.cn(r_sq, success);
     } else if (ti_choice == "dirk2") {
-        ti.dirk212(r_sq);
+        ti.dirk212(r_sq, success);
     } else {
         printf("ERROR: invalid time integrator choice!\n");
         return;
@@ -209,22 +210,27 @@ void runBatch()
                                                      cfl, 1e-12, 1e-2, 1e-6, adapt_dt, false };
 
         Real r_sq = radius_init * radius_init;
+        bool success = false;
         if (ti_choice == "rk4") {
-            ti.rk4(r_sq);
+            ti.rk4(r_sq, success);
+        } else if (ti_choice == "rk3bs") {
+            ti.rk3bs(r_sq, success);
         } else if (ti_choice == "backward_euler") {
-            ti.be(r_sq);
+            ti.be(r_sq, success);
         } else if (ti_choice == "cn") {
-            ti.cn(r_sq);
+            ti.cn(r_sq, success);
         } else if (ti_choice == "dirk2") {
-            ti.dirk212(r_sq);
+            ti.dirk212(r_sq, success);
         } else {
             printf("ERROR: invalid time integrator choice!\n");
             return;
         }
         Real radius = std::sqrt(r_sq);
-        printf("Radius: %1.16e (initial), %1.16e (final)\n", radius_init, radius);
-        fprintf(out, "%1.16e %1.16e %1.16e %1.16e %1.16e %1.16e\n",
-                radius_init, radius, sat_ratio, temperature, e_sat, solute_mass);
+        printf("Radius: %1.16e (initial), %1.16e (final); Success: %s\n",
+               radius_init, radius, (success ? "true" : "false"));
+        fprintf(out, "%1.16e %1.16e %1.16e %1.16e %1.16e %1.16e %s\n",
+                radius_init, radius, sat_ratio, temperature, e_sat, solute_mass,
+                (success ? "success" : "fail"));
     }
 
     fclose(out);

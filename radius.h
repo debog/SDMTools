@@ -239,9 +239,11 @@ namespace SuperDropletsUtils
         bool m_adapt_dt;
         bool m_verbose;
 
-        void rk3bs ( RT& a_u ) const
+        void rk3bs ( RT& a_u,
+                     bool& a_success ) const
         {
             RT cur_time = 0.0;
+            a_success = true;
 
             RT tau = m_ode.rhs_jac(a_u, m_T, m_e_s, m_M_s);
             RT dt = m_cfl / std::sqrt(tau*tau);
@@ -261,9 +263,14 @@ namespace SuperDropletsUtils
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
                 }
+                if (!std::isfinite(dt)) {
+                    a_success = false;
+                    break;
+                }
 
                 RT u_new = 0.0;
-                while (1) {
+                bool step_success = false;
+                while (!step_success) {
 
                     RT u1 = a_u;
                     RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
@@ -288,35 +295,46 @@ namespace SuperDropletsUtils
                     }
 
                     if (std::isfinite(std::sqrt(u_new))) {
+                        step_success = true;
                         break;
                     }
                     dt *= 0.5;
                     if (dt < (1.0e-12*m_t_final)) {
                         break;
                     }
-                    if (!std::isfinite(dt)) {
+                }
+
+                if (step_success) {
+
+                    RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                    a_u_old = a_u;
+                    a_u = u_new;
+                    cur_time += dt;
+
+                    if (m_verbose) {
+                        printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                                cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                    }
+                    if (snorm < m_stol) {
                         break;
                     }
-                }
 
-                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
-                a_u_old = a_u;
-                a_u = u_new;
-                cur_time += dt;
+                } else {
 
-                if (m_verbose) {
-                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
-                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
-                }
-                if (snorm < m_stol) {
+                    a_success = false;
                     break;
+
                 }
             }
+
+            return;
         }
 
-        void rk4 ( RT& a_u ) const
+        void rk4 ( RT& a_u,
+                   bool& a_success ) const
         {
             RT cur_time = 0.0;
+            a_success = true;
 
             while (cur_time < m_t_final) {
 
@@ -325,9 +343,14 @@ namespace SuperDropletsUtils
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
                 }
+                if (!std::isfinite(dt)) {
+                    a_success = false;
+                    break;
+                }
 
                 RT u_new = 0.0;
-                while (1) {
+                bool step_success = false;
+                while (!step_success) {
 
                     RT u1 = a_u;
                     RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
@@ -344,34 +367,45 @@ namespace SuperDropletsUtils
                     u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
 
                     if (std::isfinite(std::sqrt(u_new))) {
+                        step_success = true;
                         break;
                     }
                     dt *= 0.5;
                     if (dt < (1.0e-12*m_t_final)) {
                         break;
                     }
-                    if (!std::isfinite(dt)) {
+                }
+
+                if (step_success) {
+
+                    RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                    a_u = u_new;
+                    cur_time += dt;
+
+                    if (m_verbose) {
+                        printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                                cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                    }
+                    if (snorm < m_stol) {
                         break;
                     }
-                }
 
-                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
-                a_u = u_new;
-                cur_time += dt;
+                } else {
 
-                if (m_verbose) {
-                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
-                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
-                }
-                if (snorm < m_stol) {
+                    a_success = false;
                     break;
+
                 }
             }
+
+            return;
         }
 
-        void be ( RT& a_u ) const
+        void be ( RT& a_u,
+                  bool& a_success ) const
         {
             RT cur_time = 0.0;
+            a_success = true;
 
             while (cur_time < m_t_final) {
 
@@ -380,14 +414,18 @@ namespace SuperDropletsUtils
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
                 }
-
+                if (!std::isfinite(dt)) {
+                    a_success = false;
+                    break;
+                }
 
                 RT res_norm_a = DBL_MAX;
                 RT res_norm_r = DBL_MAX;
                 bool converged = false;
 
                 RT u_new = 0.0;
-                while (1) {
+                bool step_success = false;
+                while (!step_success) {
 
                     RT mu = 1.0 / dt;
                     RT rhs = mu * a_u;
@@ -397,37 +435,48 @@ namespace SuperDropletsUtils
                               res_norm_a, res_norm_r, converged );
 
                     if (std::isfinite(std::sqrt(a_u)) && converged) {
+                        step_success = true;
                         break;
                     }
                     dt *= 0.5;
                     if (dt < (1.0e-12*m_t_final)) {
                         break;
                     }
-                    if (!std::isfinite(dt)) {
+                }
+
+                if (step_success) {
+
+                    RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                    a_u = u_new;
+                    cur_time += dt;
+
+                    if (m_verbose) {
+                        printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                                cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                        printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                                res_norm_a, res_norm_r,
+                                (converged ? "yes" : "no") );
+                    }
+                    if (snorm < m_stol) {
                         break;
                     }
-                }
 
-                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
-                a_u = u_new;
-                cur_time += dt;
+                } else {
 
-                if (m_verbose) {
-                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
-                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
-                    printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
-                            res_norm_a, res_norm_r,
-                            (converged ? "yes" : "no") );
-                }
-                if (snorm < m_stol) {
+                    a_success = false;
                     break;
+
                 }
             }
+
+            return;
         }
 
-        void cn ( RT& a_u ) const
+        void cn ( RT& a_u,
+                  bool& a_success ) const
         {
             RT cur_time = 0.0;
+            a_success = true;
 
             while (cur_time < m_t_final) {
 
@@ -436,13 +485,17 @@ namespace SuperDropletsUtils
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
                 }
+                if (!std::isfinite(dt)) {
+                    a_success = false;
+                    break;
+                }
 
                 RT res_norm_a = DBL_MAX;
                 RT res_norm_r = DBL_MAX;
                 bool converged = false;
 
                 RT u_new = 0.0;
-
+                bool step_success = false;
                 while (1) {
 
                     RT mu = 1.0 / (0.5*dt);
@@ -460,37 +513,48 @@ namespace SuperDropletsUtils
                     u_new = a_u + 0.5 * dt * (f1 + f2);
 
                     if (std::isfinite(std::sqrt(u_new)) && converged) {
+                        step_success = true;
                         break;
                     }
                     dt *= 0.5;
                     if (dt < (1.0e-12*m_t_final)) {
                         break;
                     }
-                    if (!std::isfinite(dt)) {
+                }
+
+                if (step_success) {
+
+                    RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                    a_u = u_new;
+                    cur_time += dt;
+
+                    if (m_verbose) {
+                        printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                                cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                        printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                                res_norm_a, res_norm_r,
+                                (converged ? "yes" : "no") );
+                    }
+                    if (snorm < m_stol) {
                         break;
                     }
-                }
 
-                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
-                a_u = u_new;
-                cur_time += dt;
+                } else {
 
-                if (m_verbose) {
-                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
-                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u) );
-                    printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
-                            res_norm_a, res_norm_r,
-                            (converged ? "yes" : "no") );
-                }
-                if (snorm < m_stol) {
+                    a_success = false;
                     break;
+
                 }
             }
+
+            return;
         }
 
-        void dirk212 ( RT& a_u ) const
+        void dirk212 ( RT& a_u,
+                       bool& a_success ) const
         {
             RT cur_time = 0.0;
+            a_success = true;
 
             while (cur_time < m_t_final) {
 
@@ -499,12 +563,17 @@ namespace SuperDropletsUtils
                 if ((cur_time + dt) > m_t_final) {
                     dt = m_t_final - cur_time;
                 }
+                if (!std::isfinite(dt)) {
+                    a_success = false;
+                    break;
+                }
 
                 bool converged = false;
                 RT res_norm_a = DBL_MAX;
                 RT res_norm_r = DBL_MAX;
-                RT u_new = 0.0;
 
+                RT u_new = 0.0;
+                bool step_success = false;
                 while (1) {
 
                     RT mu = 1.0 / dt;
@@ -546,32 +615,41 @@ namespace SuperDropletsUtils
                     u_new = a_u + 0.5 * dt * (f1 + f2);
 
                     if (std::isfinite(std::sqrt(u_new)) && converged) {
+                        step_success = true;
                         break;
                     }
                     dt *= 0.5;
                     if (dt < (1.0e-12*m_t_final)) {
                         break;
                     }
-                    if (!std::isfinite(dt)) {
+                }
+
+                if (step_success) {
+
+                    RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
+                    a_u = u_new;
+                    cur_time += dt;
+
+                    if (m_verbose) {
+                        printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e, snorm = %1.1e\n",
+                                cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u), snorm);
+                        printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
+                                res_norm_a, res_norm_r,
+                                (converged ? "yes" : "no") );
+                    }
+                    if (snorm < m_stol) {
                         break;
                     }
-                }
 
-                RT snorm = std::sqrt((a_u-u_new)*(a_u-u_new)/(a_u*a_u));
-                a_u = u_new;
-                cur_time += dt;
+                } else {
 
-                if (m_verbose) {
-                    printf( "Time %1.2e, dt = %1.2e, cfl = %1.1e, radius = %1.4e\n",
-                            cur_time, dt, dt * std::sqrt(tau*tau), std::sqrt(a_u) );
-                    printf( "    norms = %1.3e (abs), %1.3e (rel), converged = %s\n",
-                            res_norm_a, res_norm_r,
-                            (converged ? "yes" : "no") );
-                }
-                if (snorm < m_stol) {
+                    a_success = false;
                     break;
+
                 }
             }
+
+            return;
         }
 
     };
