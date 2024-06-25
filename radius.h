@@ -1,6 +1,9 @@
 #include <cmath>
 #include <stdio.h>
 
+#define AMREX_GPU_HOST_DEVICE
+#define AMREX_FORCE_INLINE
+
 using ParticleReal = double;
 using Real = double;
 
@@ -60,77 +63,86 @@ class MaterialProperties {
 
 namespace SuperDropletsUtils
 {
+    /*! \brief Phase change equation (in terms of R^2) */
+    template <typename RT /*!< real-type */ >
     struct dRsqdt
     {
-        ParticleReal a;
-        ParticleReal b;
-        ParticleReal L;
-        ParticleReal K;
-        ParticleReal Rv;
-        ParticleReal rho_l;
-        ParticleReal D;
+        RT a;         /*!< curvature effect coefficient */
+        RT b;         /*!< solute effect coefficient */
+        RT L;         /*!< latent heat of vaporization (condensate) */
+        RT K;         /*!< thermal conductivity (condensate) */
+        RT Rv;        /*!< gas constant of air with vapour */
+        RT rho_l;     /*!< density of condensate */
+        RT D;         /*!< molecular diffusion coefficient of air */
 
-        ParticleReal rhs_func (   const ParticleReal a_R_sq,
-                                  const ParticleReal a_S,
-                                  const ParticleReal a_T,
-                                  const ParticleReal a_e_s,
-                                  const ParticleReal a_M_s ) const noexcept
+        /*! \brief Right-hand-side of the phase change ODE */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        RT rhs_func ( const RT a_R_sq, /*!< radius squared */
+                      const RT a_S,    /*!< saturation ratio */
+                      const RT a_T,    /*!< temperature */
+                      const RT a_e_s,  /*!< saturation pressure */
+                      const RT a_M_s   /*!< solute mass */ ) const noexcept
         {
-            ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
-            ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
+            RT F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
+            RT F_d = (rho_l*Rv*a_T) / (D*a_e_s);
 
-            ParticleReal R_inv = std::exp(-0.5*std::log(a_R_sq));
-            ParticleReal R_inv_cubed = R_inv*R_inv*R_inv;
+            RT R_inv = std::exp(-0.5*std::log(a_R_sq));
+            RT R_inv_cubed = R_inv*R_inv*R_inv;
 
-            ParticleReal alpha = 2.0 * (a_S-1.0) / (F_k + F_d);
-            ParticleReal retval = alpha;
+            RT alpha = 2.0 * (a_S-1.0) / (F_k + F_d);
+            RT retval = alpha;
 
-            ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
+            RT beta = -2.0 * (a/a_T) / (F_k + F_d);
             retval += beta*R_inv;
 
-            ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
+            RT gamma = 2.0 * b * a_M_s / (F_k + F_d);
             retval += gamma*R_inv_cubed;
 
             return retval;
         }
 
-        ParticleReal rhs_jac (   const ParticleReal a_R_sq,
-                                 const ParticleReal a_T,
-                                 const ParticleReal a_e_s,
-                                 const ParticleReal a_M_s ) const noexcept
+        /*! \brief Jacobian of right-hand-side of the phase change ODE */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        RT rhs_jac ( const RT a_R_sq, /*!< radius squared */
+                     const RT a_T,    /*!< temperature */
+                     const RT a_e_s,  /*!< saturation pressure */
+                     const RT a_M_s   /*!< solute mass */ ) const noexcept
         {
-            ParticleReal F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
-            ParticleReal F_d = (rho_l*Rv*a_T) / (D*a_e_s);
+            RT F_k = ( L/(Rv*a_T) - 1.0) * ((L*rho_l) / (K*a_T));
+            RT F_d = (rho_l*Rv*a_T) / (D*a_e_s);
 
-            ParticleReal R_inv = 1.0/std::sqrt(a_R_sq);
-            ParticleReal R_inv_3 = R_inv*R_inv*R_inv;
-            ParticleReal R_inv_5 = R_inv_3*R_inv*R_inv;
+            RT R_inv = 1.0/std::sqrt(a_R_sq);
+            RT R_inv_3 = R_inv*R_inv*R_inv;
+            RT R_inv_5 = R_inv_3*R_inv*R_inv;
 
-            ParticleReal retval = 0.0;
+            RT retval = 0.0;
 
-            ParticleReal beta = -2.0 * (a/a_T) / (F_k + F_d);
+            RT beta = -2.0 * (a/a_T) / (F_k + F_d);
             retval -= 0.5 * beta*R_inv_3;
 
-            ParticleReal gamma = 2.0 * b * a_M_s / (F_k + F_d);
+            RT gamma = 2.0 * b * a_M_s / (F_k + F_d);
             retval -= 0.5 * 3.0*gamma*R_inv_5;
 
             return retval;
         }
 
-        void initial_guess ( ParticleReal&      a_R_sq,
-                             const ParticleReal a_S,
-                             const ParticleReal a_T,
-                             const ParticleReal a_M_s ) const noexcept
+        /*! \brief Computes a convenient (?) initial guess based on Kohler curve */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void initial_guess ( RT&      a_R_sq, /*!< radius squared */
+                             const RT a_S,    /*!< saturation ratio */
+                             const RT a_T,    /*!< temperature */
+                             const RT a_M_s   /*!< solute mass */
+                           ) const noexcept
         {
-            ParticleReal eq_a = a / a_T;
-            ParticleReal eq_b = b * a_M_s;
-            ParticleReal Rc = std::sqrt(3*eq_b/eq_a);
-            ParticleReal eq_c = a_S - 1.0;
-            ParticleReal a = eq_a / eq_c;
-            ParticleReal b = eq_b / eq_c;
-            ParticleReal a3 = a*a*a;
+            RT eq_a = a / a_T;
+            RT eq_b = b * a_M_s;
+            RT Rc = std::sqrt(3*eq_b/eq_a);
+            RT eq_c = a_S - 1.0;
+            RT a = eq_a / eq_c;
+            RT b = eq_b / eq_c;
+            RT a3 = a*a*a;
 
-            Real r_init = std::sqrt(a_R_sq);
+            RT r_init = std::sqrt(a_R_sq);
             if ( (a_S > 1.0) && (a3 < b*(27.0/4.0)) ) {
                 r_init = 1.0e-3;
             }
@@ -142,40 +154,53 @@ namespace SuperDropletsUtils
 
     };
 
-    template<typename ODE, typename RT>
+    /*! \brief Scalar Newton solver for phase change equation
+     *
+     * Solves the following nonlinear equation:
+     * mu * u - F(u) - R = 0,
+     * where:
+     *   u: solution variable
+     *   mu: constant
+     *   R: right-hand-side (constant)
+     *   F(u): function
+    */
+    template<typename NE /*!< Nonlinear equation */, typename RT /*!< real-type */>
     struct NewtonSolver
     {
-        ODE&  m_ode;
+        const NE&  m_ne;      /*!< nonlinear equation */
 
-        RT  m_rtol;
-        RT  m_atol;
-        RT  m_stol;
-        int m_maxits;
+        RT  m_rtol;     /*!< relative tolerance */
+        RT  m_atol;     /*!< absolute tolerance */
+        RT  m_stol;     /*!< step size tolerance */
+        int m_maxits;   /*!< max number of iterations */
 
-        bool m_init_guess;
+        bool m_init_guess;  /*!< compute initial guess from NE object? */
 
-        void operator()  (  RT&             a_u,
-                            RT&             a_r,
-                            const RT&       a_mu,
-                            const RT&       a_S,
-                            const RT&       a_T,
-                            const RT&       a_e_s,
-                            const RT&       a_M_s,
-                            RT&             a_res_norm_a,
-                            RT&             a_res_norm_r,
-                            bool&           a_converged ) const
+        /*! \brief solve the nonlinear equation */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void operator()  (  RT&             a_u,            /*!< solution variable */
+                            RT&             a_r,            /*!< right-hand-side */
+                            const RT&       a_mu,           /*!< mu */
+                            const RT&       a_S,            /*!< saturation ratio */
+                            const RT&       a_T,            /*!< temperature */
+                            const RT&       a_e_s,          /*!< saturation pressure */
+                            const RT&       a_M_s,          /*!< solute mass */
+                            RT&             a_res_norm_a,   /*!< absolute norm at exit */
+                            RT&             a_res_norm_r    /*!< relative norm at exit */,
+                            bool&           a_converged     /*!< convergence status at exit */
+                         ) const
         {
             a_converged = false;
             RT res_norm0 = 0.0;
 
             if (m_init_guess) {
-                m_ode.initial_guess(a_u, a_S, a_T, a_M_s);
+                m_ne.initial_guess(a_u, a_S, a_T, a_M_s);
             }
 
             for (int k = 0; k < m_maxits; k++) {
                 RT residual = a_mu * a_u
                               - (   a_r
-                                  + m_ode.rhs_func( a_u, a_S, a_T, a_e_s, a_M_s ) );
+                                  + m_ne.rhs_func( a_u, a_S, a_T, a_e_s, a_M_s ) );
                 a_res_norm_a = std::sqrt(residual*residual);
 
                 if (k == 0) {
@@ -186,9 +211,6 @@ namespace SuperDropletsUtils
                     }
                 }
                 a_res_norm_r = a_res_norm_a / res_norm0;
-
-//                printf("  iter: %3d, norm: %1.4e (abs.), %1.4e (rel.)\n",
-//                        k, a_res_norm_a, a_res_norm_r );
 
                 if (a_res_norm_a <= m_atol) {
                     a_converged = true;
@@ -203,7 +225,7 @@ namespace SuperDropletsUtils
                     break;
                 }
 
-                RT slope = a_mu - m_ode.rhs_jac( a_u, a_T, a_e_s, a_M_s );
+                RT slope = a_mu - m_ne.rhs_jac( a_u, a_T, a_e_s, a_M_s );
                 RT du = 0.0;
                 du = - residual / slope;
 
@@ -215,32 +237,42 @@ namespace SuperDropletsUtils
                 }
 
                 a_u += du;
+                if (a_u <= 0.0) {
+                    a_converged = false;
+                    break;
+                }
             }
         }
     };
 
-    template<typename ODE, typename NewtonSolver, typename RT>
+    /*! \brief Implicit and explicit time integrators for the phase change equation */
+    template<   typename ODE /*!< ODE */,
+                typename NewtonSolver /*!< Newton solver */,
+                typename RT /*!< real-type */ >
     struct TI
     {
-        ODE& m_ode;
-        NewtonSolver& m_newton;
+        const ODE& m_ode; /*!< ODE */
+        const NewtonSolver& m_newton; /*!< Newton solver */
 
-        RT m_t_final;
-        RT m_S;
-        RT m_T;
-        RT m_e_s;
-        RT m_M_s;
+        RT m_t_final;   /*!< final time */
+        RT m_S;         /*!< saturation ratio */
+        RT m_T;         /*!< temperature */
+        RT m_e_s;       /*!< saturation pressure */
+        RT m_M_s;       /*!< solute mass */
 
-        RT m_cfl;
-        RT m_atol;
-        RT m_rtol;
-        RT m_stol;
+        RT m_cfl;       /*!< CFL */
+        RT m_atol;      /*!< absolute tolerance (for adaptive dt) */
+        RT m_rtol;      /*!< absolute tolerance (for adaptive dt) */
+        RT m_stol;      /*!< solution update tolerance for exit due to steady state */
 
-        bool m_adapt_dt;
-        bool m_verbose;
+        bool m_adapt_dt;  /*!< use error-based adaptive dt? */
+        bool m_verbose;   /*!< verbosity */
 
-        void rk3bs ( RT& a_u,
-                     bool& a_success ) const
+        /*! \brief 3rd-order, 4-stage Bogacki-Shampine explicit RK method
+         *  with 2nd order embedded method */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void rk3bs ( RT& a_u,  /*!< solution */
+                     bool& a_success  /*!< success/failure flag */ ) const
         {
             RT cur_time = 0.0;
             a_success = true;
@@ -272,16 +304,36 @@ namespace SuperDropletsUtils
                 bool step_success = false;
                 while (!step_success) {
 
+                    if (dt < (1.0e-12*m_cfl/std::sqrt(tau*tau))) {
+                        break;
+                    }
+
                     RT u1 = a_u;
+                    if (u1 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
 
                     RT u2 = a_u + 0.5*dt*f1;
+                    if (u2 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
                     RT u3 = a_u + 0.75*dt*f2;
+                    if (u3 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f3 = m_ode.rhs_func(u3, m_S, m_T, m_e_s, m_M_s);
 
                     RT u4 = a_u + (1.0/9.0)*dt * (2.0*f1 + 3.0*f2 + 4.0*f3);
+                    if (u4 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f4 = m_ode.rhs_func(u4, m_S, m_T, m_e_s, m_M_s);
 
                     u_new = u4;
@@ -294,14 +346,13 @@ namespace SuperDropletsUtils
                         dt_new = dt * std::exp((1.0/3)*std::log(1.0/E));
                     }
 
-                    if (std::isfinite(std::sqrt(u_new))) {
-                        step_success = true;
-                        break;
+                    if (std::isfinite(u_new)) {
+                        if (u_new > 0) {
+                            step_success = true;
+                            break;
+                        }
                     }
                     dt *= 0.5;
-                    if (dt < (1.0e-12*m_t_final)) {
-                        break;
-                    }
                 }
 
                 if (step_success) {
@@ -330,8 +381,10 @@ namespace SuperDropletsUtils
             return;
         }
 
-        void rk4 ( RT& a_u,
-                   bool& a_success ) const
+        /*! \brief 4th-order, 4-stage explicit Runge-Kutta method */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void rk4 ( RT& a_u,  /*!< solution */
+                   bool& a_success  /*!< success/failure flag */ ) const
         {
             RT cur_time = 0.0;
             a_success = true;
@@ -352,28 +405,47 @@ namespace SuperDropletsUtils
                 bool step_success = false;
                 while (!step_success) {
 
+                    if (dt < (1.0e-12*m_cfl/std::sqrt(tau*tau))) {
+                        break;
+                    }
+
                     RT u1 = a_u;
+                    if (u1 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f1 = m_ode.rhs_func(u1, m_S, m_T, m_e_s, m_M_s);
 
                     RT u2 = a_u + 0.5*dt*f1;
+                    if (u2 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f2 = m_ode.rhs_func(u2, m_S, m_T, m_e_s, m_M_s);
 
                     RT u3 = a_u + 0.5*dt*f2;
+                    if (u3 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f3 = m_ode.rhs_func(u3, m_S, m_T, m_e_s, m_M_s);
 
                     RT u4 = a_u + 1.0*dt*f3;
+                    if (u4 <= 0) {
+                        dt *= 0.5;
+                        continue;
+                    }
                     RT f4 = m_ode.rhs_func(u4, m_S, m_T, m_e_s, m_M_s);
 
                     u_new = a_u + dt*(f1+2.0*f2+2.0*f3+f4)/6.0;
 
-                    if (std::isfinite(std::sqrt(u_new))) {
-                        step_success = true;
-                        break;
+                    if (std::isfinite(u_new)) {
+                        if (u_new > 0) {
+                            step_success = true;
+                            break;
+                        }
                     }
                     dt *= 0.5;
-                    if (dt < (1.0e-12*m_t_final)) {
-                        break;
-                    }
                 }
 
                 if (step_success) {
@@ -401,8 +473,10 @@ namespace SuperDropletsUtils
             return;
         }
 
-        void be ( RT& a_u,
-                  bool& a_success ) const
+        /*! \brief 1st order implicit backward Euler method */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void be ( RT& a_u,  /*!< solution */
+                  bool& a_success  /*!< success/failure flag */ ) const
         {
             RT cur_time = 0.0;
             a_success = true;
@@ -427,6 +501,10 @@ namespace SuperDropletsUtils
                 bool step_success = false;
                 while (!step_success) {
 
+                    if (dt < (1.0e-12*m_cfl/std::sqrt(tau*tau))) {
+                        break;
+                    }
+
                     RT mu = 1.0 / dt;
                     RT rhs = mu * a_u;
                     u_new = a_u;
@@ -434,14 +512,15 @@ namespace SuperDropletsUtils
                               m_S, m_T, m_e_s, m_M_s,
                               res_norm_a, res_norm_r, converged );
 
-                    if (std::isfinite(std::sqrt(a_u)) && converged) {
-                        step_success = true;
-                        break;
+                    if (converged) {
+                        if (std::isfinite(u_new)) {
+                            if (u_new > 0) {
+                                step_success = true;
+                                break;
+                            }
+                        }
                     }
                     dt *= 0.5;
-                    if (dt < (1.0e-12*m_t_final)) {
-                        break;
-                    }
                 }
 
                 if (step_success) {
@@ -472,8 +551,10 @@ namespace SuperDropletsUtils
             return;
         }
 
-        void cn ( RT& a_u,
-                  bool& a_success ) const
+        /*! \brief 2nd-order implicit Crank-Nicolson method */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void cn ( RT& a_u,  /*!< solution */
+                  bool& a_success  /*!< success/failure flag */ ) const
         {
             RT cur_time = 0.0;
             a_success = true;
@@ -496,8 +577,11 @@ namespace SuperDropletsUtils
 
                 RT u_new = 0.0;
                 bool step_success = false;
-                while (1) {
+                while (!step_success) {
 
+                    if (dt < (1.0e-12*m_cfl/std::sqrt(tau*tau))) {
+                        break;
+                    }
                     RT mu = 1.0 / (0.5*dt);
 
                     RT u1 = a_u;
@@ -512,14 +596,15 @@ namespace SuperDropletsUtils
 
                     u_new = a_u + 0.5 * dt * (f1 + f2);
 
-                    if (std::isfinite(std::sqrt(u_new)) && converged) {
-                        step_success = true;
-                        break;
+                    if (converged) {
+                        if (std::isfinite(u_new)) {
+                            if (u_new > 0) {
+                                step_success = true;
+                                break;
+                            }
+                        }
                     }
                     dt *= 0.5;
-                    if (dt < (1.0e-12*m_t_final)) {
-                        break;
-                    }
                 }
 
                 if (step_success) {
@@ -550,8 +635,10 @@ namespace SuperDropletsUtils
             return;
         }
 
-        void dirk212 ( RT& a_u,
-                       bool& a_success ) const
+        /*! \brief 2nd-order, 2-stage diagonally-implicit RK method */
+        AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+        void dirk212 ( RT& a_u,  /*!< solution */
+                       bool& a_success  /*!< success/failure flag */ ) const
         {
             RT cur_time = 0.0;
             a_success = true;
@@ -574,8 +661,11 @@ namespace SuperDropletsUtils
 
                 RT u_new = 0.0;
                 bool step_success = false;
-                while (1) {
+                while (!step_success) {
 
+                    if (dt < (1.0e-12*m_cfl/std::sqrt(tau*tau))) {
+                        break;
+                    }
                     RT mu = 1.0 / dt;
 
                     converged = true;
@@ -614,14 +704,15 @@ namespace SuperDropletsUtils
 
                     u_new = a_u + 0.5 * dt * (f1 + f2);
 
-                    if (std::isfinite(std::sqrt(u_new)) && converged) {
-                        step_success = true;
-                        break;
+                    if (converged) {
+                        if (std::isfinite(u_new)) {
+                            if (u_new > 0) {
+                                step_success = true;
+                                break;
+                            }
+                        }
                     }
                     dt *= 0.5;
-                    if (dt < (1.0e-12*m_t_final)) {
-                        break;
-                    }
                 }
 
                 if (step_success) {
